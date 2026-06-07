@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shortuser
+      POSTGRES_PASSWORD: shortpass
+      POSTGRES_DB: shortdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shortuser -d shortdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://shortuser:shortpass@postgres:5432/shortdb
+      REDIS_URL: redis://redis:6379/0
+      BASE_URL: http://localhost:8000
+      LOG_LEVEL: INFO
+      ENVIRONMENT: local
+      CACHE_TTL_SECONDS: "3600"
+      RATE_LIMIT_REQUESTS: "60"
+      RATE_LIMIT_WINDOW_SECONDS: "60"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://shortuser:shortpass@postgres:5432/shortdb
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: INFO
+      ENVIRONMENT: local
+      WORKER_MAX_RETRIES: 3
+      WORKER_BASE_BACKOFF_SECONDS: 1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
