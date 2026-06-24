@@ -12,7 +12,7 @@ setup:
 	@if [ ! -f .env ]; then cp .env.example .env; fi
 
 test:
-	$(PY) -m pytest -q
+	PYTHONPATH=. $(PY) -m pytest -q
 
 up:
 	docker compose up --build -d
